@@ -17,5 +17,5 @@ else
 	exit 1;
 fi
 set -x
-/bin/sudo -k dd if=./output/images/sdcard.img of=/dev/sda bs=4M
+/bin/sudo -k dd if=./output/images/sdcard.img of=/dev/sda bs=4M progress
 set +x
