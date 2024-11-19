@@ -15,6 +15,8 @@
 
 #include <async_mqtt5.hpp>
 
+#include <hiredis/hiredis.h>
+
 constexpr auto use_nothrow_awaitable = boost::asio::as_tuple(boost::asio::use_awaitable);
 
 using mqtt_client_t = async_mqtt5::mqtt_client<boost::asio::ip::tcp::socket>;
@@ -86,7 +88,7 @@ boost::asio::awaitable<void> subscribe_and_observe(mqtt_client_t & c, std::vecto
         auto && [ec, topic, payload, publish_groups] = co_await c.async_receive(use_nothrow_awaitable);
 
         if (ec == async_mqtt5::client::error::session_expired) {
-            //connection lost, but client reconnected, resubscribe;
+            
             if ( co_await subscribe(c, topics )) {
                 continue;
             } else { //resubscription failed
@@ -125,7 +127,84 @@ boost::asio::awaitable<void> subscribe_and_observe(mqtt_client_t & c, std::vecto
     exit(0);
 }
 
+bool redis_create_object(redisContext *c, std::string name) {
+    redisReply * reply;
+
+    reply = (redisReply*)redisCommand(c, "TS.CREATE %s RETENTION 2678400000 LABELS l1 %s", name.c_str(), "east");
+    if (reply == NULL ) {
+        std::cout << "R :: failed to create object\n";
+        return false;
+    }
+
+    std::cout << "R :: type: " << std::string(reply->str) << "\n";
+    return true;
+}
+
+void push_to_db(redisContext * c, std::string key, std::string value){
+    redisReply * reply;
+
+    reply = (redisReply*)redisCommand(c, "TS.ADD %s * %s", key.c_str(), value.c_str());
+
+    freeReplyObject(reply);
+}
+
+void get_from_db (redisContext *c, std::string key){
+    redisReply* reply;
+
+    reply = (redisReply*)redisCommand(c, "TS.RANGE %s - +", key.c_str());
+
+    std::cout << reply->elements << '\n';
+
+    for (int i = 0; i < reply->elements; i++)
+    {
+        for (int j = 0; j < reply->element[i]->elements; j++)
+        {
+            std::cout << reply->element[i]->element[j]->integer << " ";
+        }
+        std::cout << '\n';
+    }
+
+    freeReplyObject(reply);
+    
+}
+
 [[noreturn]] void tsdb_extraction_routine() {
+    
+    redisReply *reply;
+    redisContext *context;
+
+    context = redisConnect("localhost", 6379);
+
+    if (context->err)
+    {
+        std::cout << "R :: database connection error: " << context->errstr << "\n";
+        exit (-1);
+    }
+    
+    reply = (redisReply*)redisCommand(context, "PING %s", "Hello World!");
+    if (reply == NULL)
+    {
+        std::cout << "R :: failed to ping redis server\n";
+        exit(-1);
+    }
+    
+    std::cout << "R :: resp: " << reply->str << '\n';
+
+    freeReplyObject(reply);
+
+    redis_create_object(context, "sensor_3");
+
+    push_to_db(context, "sensor_3", "1233221");
+    push_to_db(context, "sensor_3", "1233221");
+    push_to_db(context, "sensor_3", "1233221");
+    push_to_db(context, "sensor_3", "1233221");
+    push_to_db(context, "sensor_3", "1233221");
+    push_to_db(context, "sensor_3", "1233221");
+
+    get_from_db(context, "sensor_3");
+
+    redisFree(context);
+
     exit(0);    
 }
 
@@ -140,11 +219,15 @@ int main(int argc, char const *argv[])
 
 
 
-    pid_t child_pid_mqtt, wait_pid;
+    pid_t child_pid_mqtt, child_pid_db, wait_pid;
     int wait_result = 0;
 
     if( (child_pid_mqtt = fork()) == 0 ) {
         mqtt_client_routine();
+    }
+
+    if ((child_pid_db = fork()) == 0) {
+        tsdb_extraction_routine();
     }
 
     while ( ( wait_pid = wait(&wait_result)) > 0) {
@@ -154,9 +237,15 @@ int main(int argc, char const *argv[])
         {
             std::cout << " (mqtt client)";
         }
-        
 
         std::cout << " died with result " << wait_result << "\n";
+
+        if (wait_result != 0) {
+            std::cout << "exitted with error -- terminating program\n";
+            kill(child_pid_mqtt, SIGQUIT);
+            kill(child_pid_db, SIGQUIT);
+        }
+
     }
 
     std::cout << "Program Terminated\n";
