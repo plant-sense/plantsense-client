@@ -2,15 +2,18 @@
 .PHONY:
 	all
 
-SRC_FILES = main.cpp
-
-BOOST_DIR = ../boost_1_86_0/boost
-
-ASYNC_MQTT5_DIR = ../async-mqtt5/include
+SRC_FILES = mqtt_client.cpp main.cpp 
 
 REDIS_DIR = ../hiredis-master
 
-REDIS_STATIC_LIB = libhiredis.a
+all: mqtt_client.o redis_interface.o main.o
+	g++ -std=c++20 -o prog -lpaho-mqttpp3 -lpaho-mqtt3as -I$(REDIS_DIR) -lhiredis main.o mqtt_client.o redis_interface.o
 
-all:
-	g++ -std=c++20 -o prog -pthread -fcoroutines -I$(REDIS_DIR) -I$(BOOST_DIR) -I$(ASYNC_MQTT5_DIR) -lhiredis $(SRC_FILES)
+main.o: main.cpp
+	g++ -std=c++20 -o main.o -c main.cpp
+
+mqtt_client.o: mqtt_client.cpp
+	g++ -std=c++20 -o mqtt_client.o -c mqtt_client.cpp
+
+redis_interface.o: redis_interface.cpp
+	g++ -std=c++20 -o redis_interface.o -c redis_interface.cpp
