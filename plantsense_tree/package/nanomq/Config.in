@@ -1,0 +1,4 @@
+config BR2_PACKAGE_NANOMQ
+	bool "nanomq"
+	help
+		Buildroot package for NanoMQ, a lightweight, high-performance MQTT messaging broker

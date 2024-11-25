@@ -1,0 +1,5 @@
+config BR2_PACKAGE_PLANTSENSE_MONITORING_AGENT
+	bool "plantsense_monitoring_agent"
+	select BR2_PACKAGE_HIREDIS
+	help
+		The custom monitoring agent for the plantsense project

@@ -1,0 +1,6 @@
+menu "Plantsense Packages"
+	source "$BR2_EXTERNAL_plantsense_tree_PATH/package/monitoring_agent/Config.in"
+	source "$BR2_EXTERNAL_plantsense_tree_PATH/package/nanomq/Config.in"
+	source "$BR2_EXTERNAL_plantsense_tree_PATH/package/test/Config.in"
+	source "$BR2_EXTERNAL_plantsense_tree_PATH/package/zigbee2mqtt/Config.in"
+endmenu

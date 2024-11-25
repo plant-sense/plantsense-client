@@ -1,0 +1,5 @@
+config BR2_PACKAGE_ZIGBEE2MQTT
+    bool "zigbee2mqtt"
+    select BR2_PACKAGE_NODEJS_NPM
+    help
+        Buildroot package for zigbee2mqtt
