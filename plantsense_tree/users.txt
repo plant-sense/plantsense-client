@@ -1,1 +1,1 @@
-plantsense -2 plantsense -1 =test_pass /home/lilly /bin/sh - Primary user
+plantsense -2 plantsense -1 =test_pass /home/plantsense /bin/sh - Primary user
