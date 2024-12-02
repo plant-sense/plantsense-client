@@ -1,0 +1,4 @@
+config BR2_PACKAGE_Z2M_SPOOF
+	bool "z2m_spoof"
+	help
+		Package for simulating zigbee2mqtt devices
