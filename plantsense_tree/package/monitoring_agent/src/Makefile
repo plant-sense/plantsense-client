@@ -7,8 +7,8 @@ CXX = g++
 REDIS_DIR = ../../../../hiredis-master
 
 # CXXFLAGS = -Wall -Werror -std=c++20
-CXXFLAGS = -Wall -std=c++20
-CXXLIBS = -lpaho-mqttpp3 -lpaho-mqtt3as -I$(REDIS_DIR) -lhiredis
+CXXFLAGS = -Wall -std=c++20 -D MONIT_DEBUG
+CXXLIBS = -lpaho-mqttpp3 -lpaho-mqtt3as -I$(REDIS_DIR) -lhiredis -ljsoncpp
 
 SRC = ${wildcard *.cpp}
 OBJ = ${patsubst %.cpp,build/%.o,${SRC}}
