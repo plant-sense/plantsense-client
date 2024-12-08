@@ -126,10 +126,13 @@ int mqtt_listener_subroutine(const mqtt_client_config conf, std::condition_varia
             std::string ieee_addr = msg->get_topic();
             ieee_addr = ieee_addr.erase(0, delim_pos+1);
             returned_data_t types = devs[(ieee_addr_t)std::stoull( ieee_addr, NULL, 16 )].get_returned_data();
+            ieee_addr = ieee_addr.erase(0, 2);
 
             sensor_reading read = parse_sensor_message(types, msg->get_payload_str());
 
-            // write_reading_to_db(redisCont, ieee_addr, read);
+            debug_print(ieee_addr << '\n');
+
+            write_reading_to_db(redisCont, ieee_addr, read);
 
         }
         
@@ -151,11 +154,11 @@ void write_reading_to_db(redisContext * c, std::string key, sensor_reading read)
     }
     if ((read.getTypes() & returned_data_t::TEMPERATURE) != 0)
     {
-        push_double_to_key(c, key + redis_suffixes::soil_suffix, read.getTemp());
+        push_double_to_key(c, key + redis_suffixes::temp_suffix, read.getTemp());
     }
     if ((read.getTypes() & returned_data_t::LIGHT) != 0)
     {
-        push_double_to_key(c, key + redis_suffixes::soil_suffix, read.getLight());
+        push_double_to_key(c, key + redis_suffixes::light_suffix, read.getLight());
     }
 }
 
@@ -168,6 +171,8 @@ sensor_reading parse_sensor_message(returned_data_t types, mqtt::string payload)
     if (! reader->parse(payload.c_str(), payload.c_str() + payload.length(), &root, &error)) {
         return sensor_reading(returned_data_t::NONE, sensor_reading::nothing, sensor_reading::nothing, sensor_reading::nothing);
     }
+
+    debug_print(types << '\n');
 
     double soil_moisture = sensor_reading::nothing;
     double temperature = sensor_reading::nothing;
@@ -184,6 +189,8 @@ sensor_reading parse_sensor_message(returned_data_t types, mqtt::string payload)
         light = root["light_intensity"].asDouble();
     }
     
+    debug_print("sm: " << soil_moisture << ", temp: " << temperature << ", li:" << light << '\n');
+
     return sensor_reading(types, temperature, soil_moisture, light);
 
 }

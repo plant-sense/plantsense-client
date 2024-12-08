@@ -95,13 +95,9 @@ data_packet retrieve_last_period(redisContext * c, std::string key, returned_dat
             d.types = (returned_data_t) (d.types & (~returned_data_t::SOIL_MOISTURE));
         } else {
 
-
             d.soil_m_ts = reply->element[0]->integer;
             
-            debug_print(reply->element[0]->type << '\n');
-
-
-            d.soil_m = reply->element[1]->dval;
+            (void)sscanf(reply->element[1]->str, "%lf", &d.soil_m);
 
             debug_print("Soil Moist - ts: " << d.soil_m_ts << " v: " << d.soil_m << '\n');
 
@@ -116,8 +112,8 @@ data_packet retrieve_last_period(redisContext * c, std::string key, returned_dat
             d.types = (returned_data_t) (d.types & (~returned_data_t::TEMPERATURE));
         }
         else {
-            d.temp_ts = reply->element[reply->elements-1]->element[0]->integer;
-            d.temp = reply->element[reply->elements-1]->element[1]->dval;
+            d.temp_ts = reply->element[0]->integer;
+            (void)sscanf(reply->element[1]->str, "%lf", &d.temp);
 
             debug_print("Temp - ts: " << d.temp_ts << " v: " << d.temp << '\n');
 
@@ -132,8 +128,9 @@ data_packet retrieve_last_period(redisContext * c, std::string key, returned_dat
             d.types = (returned_data_t) (d.types & (~returned_data_t::LIGHT));
         }
         else {
-            d.light_ts = reply->element[reply->elements-1]->element[0]->integer;
-            d.light = reply->element[reply->elements-1]->element[1]->dval;
+            d.light_ts = reply->element[0]->integer;
+            
+            (void)sscanf(reply->element[1]->str, "%lf", &d.light);
             
             debug_print("Light - ts: " << d.light_ts << " v: " << d.light << '\n');
 
