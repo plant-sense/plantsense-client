@@ -8,6 +8,7 @@
 #include <mutex>
 #include <queue>
 #include <sstream>
+#include <thread>
 
 #ifdef MONIT_DEBUG
 #warning "debug ON"
@@ -28,6 +29,8 @@ struct mqtt_client_config
     size_t port;
     size_t timeout_s;
     size_t retries;
+    std::string redis_addr;
+    size_t redis_port;
 };
 
 enum mqtt_QOS {
@@ -38,8 +41,8 @@ enum mqtt_QOS {
 
 enum returned_data_t {
     NONE = 0,
-    TEMPERATURE = 1 << 0,
-    HUMIDITY = 1 << 1, 
+    SOIL_MOISTURE = 1 << 0,
+    TEMPERATURE = 1 << 1, 
     LIGHT = 1 << 2
 };
 
@@ -114,7 +117,7 @@ inline std::string ieee_to_hex(const ieee_addr_t addr) {
 }
 class device_info {
     private:
-    const ieee_addr_t ieee_addr; // These are unique globally per device, so we should use these as db keys
+    ieee_addr_t ieee_addr; // These are unique globally per device, so we should use these as db keys
     std::string friendly_name;
     returned_data_t data_types;
     interaction_type_t interactions;
@@ -123,6 +126,10 @@ class device_info {
     static const std::string base_addr;
     device_info(ieee_addr_t ieee_addr, std::string friendly_name, returned_data_t returned_data, interaction_type_t interaction_type) 
         : ieee_addr(ieee_addr), friendly_name(friendly_name), data_types(returned_data), interactions(interaction_type) {};
+
+    device_info(){
+        
+    }
 
     inline bool set_friendly_name(std::string new_name) {
         if (new_name.size() == 0){
@@ -158,6 +165,18 @@ class device_info {
 
     inline interaction_type_t get_interaction_types(void) const {
         return this->interactions;
+    }
+
+    inline device_info& operator=(const device_info &oth){
+        if (this == &oth)
+        {
+            return *this;
+        }
+        this->ieee_addr = oth.ieee_addr;
+        this->data_types = oth.data_types;
+        this->friendly_name = oth.friendly_name;
+        this->interactions = oth.interactions;
+        return *this;
     }
 
 };

@@ -1,7 +1,7 @@
 #include "mqtt_client.hpp"
 #include <chrono>
 #include <json/json.h>
-
+#include <unordered_map>
 
 std::string assemble_uri(std::string protocol, std::string addr, size_t port) {
     std::string uri = protocol + "://" + addr + ":" + std::to_string(port);
@@ -21,6 +21,10 @@ int mqtt_listener_subroutine(const mqtt_client_config conf, std::condition_varia
 
     std::cout << "Init mqtt connection\n";
     
+    redisContext * redisCont;
+
+    redisCont = redisConnect(conf.redis_addr.c_str(), conf.redis_port);
+
     mqtt::connect_options connection_options = mqtt::connect_options_builder()
         .clean_session(true)
         .automatic_reconnect(true)
@@ -70,6 +74,12 @@ int mqtt_listener_subroutine(const mqtt_client_config conf, std::condition_varia
     if (msg) {
         std::cout << msg->get_payload_str() << '\n';
         devices = register_devices(msg);
+
+        for (const device_info &dev : devices)
+        {
+            create_sensor_series(redisCont, ieee_to_hex(dev.get_ieee_address()), dev.get_returned_data());
+            create_aggregation_for_device(redisCont, ieee_to_hex(dev.get_ieee_address()), dev.get_returned_data());
+        }
         notify_other_thread(&devices, dev_queue);
     }
     else
@@ -82,7 +92,14 @@ int mqtt_listener_subroutine(const mqtt_client_config conf, std::condition_varia
         std::cerr << "subscription error\n";
     }
 
-    #warning add check for return value
+    std::unordered_map<ieee_addr_t, device_info> devs;
+
+    for (const device_info &i : devices)
+    {
+        devs[i.get_ieee_address()] = i;
+    }
+    
+
     while (!halt)
     {
         msg = client.try_consume_message_for(std::chrono::seconds(conf.timeout_s));
@@ -99,6 +116,21 @@ int mqtt_listener_subroutine(const mqtt_client_config conf, std::condition_varia
         {
             std::cout << "From: " << msg->get_topic() << '\n';
             std::cout << "Message: \n" << msg->get_payload_str() << "\n===\n"; 
+            
+            size_t delim_pos = msg->get_topic().find('/');
+            if (delim_pos == std::string::npos)
+            {
+                debug_print("Error: invalid address");
+                continue;
+            }
+            std::string ieee_addr = msg->get_topic();
+            ieee_addr = ieee_addr.erase(0, delim_pos+1);
+            returned_data_t types = devs[(ieee_addr_t)std::stoull( ieee_addr, NULL, 16 )].get_returned_data();
+
+            sensor_reading read = parse_sensor_message(types, msg->get_payload_str());
+
+            // write_reading_to_db(redisCont, ieee_addr, read);
+
         }
         
     }
@@ -110,6 +142,50 @@ int mqtt_listener_subroutine(const mqtt_client_config conf, std::condition_varia
 
     cvar->notify_all();
     return EXIT_SUCCESS;
+}
+
+void write_reading_to_db(redisContext * c, std::string key, sensor_reading read){
+    if ((read.getTypes() & returned_data_t::SOIL_MOISTURE) != 0)
+    {
+        push_double_to_key(c, key + redis_suffixes::soil_suffix, read.getSoilMoisture());
+    }
+    if ((read.getTypes() & returned_data_t::TEMPERATURE) != 0)
+    {
+        push_double_to_key(c, key + redis_suffixes::soil_suffix, read.getTemp());
+    }
+    if ((read.getTypes() & returned_data_t::LIGHT) != 0)
+    {
+        push_double_to_key(c, key + redis_suffixes::soil_suffix, read.getLight());
+    }
+}
+
+sensor_reading parse_sensor_message(returned_data_t types, mqtt::string payload){
+    Json::CharReaderBuilder builder;
+    Json::Value root;
+    JSONCPP_STRING error;
+    const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+
+    if (! reader->parse(payload.c_str(), payload.c_str() + payload.length(), &root, &error)) {
+        return sensor_reading(returned_data_t::NONE, sensor_reading::nothing, sensor_reading::nothing, sensor_reading::nothing);
+    }
+
+    double soil_moisture = sensor_reading::nothing;
+    double temperature = sensor_reading::nothing;
+    double light = sensor_reading::nothing;
+
+
+    if ((types & returned_data_t::SOIL_MOISTURE) != 0){
+        soil_moisture = root["soil_moisture"].asDouble();
+    }
+    if ((types & returned_data_t::TEMPERATURE) != 0){
+        temperature = root["temperature"].asDouble();
+    }
+    if ((types & returned_data_t::LIGHT) != 0) {
+        light = root["light_intensity"].asDouble();
+    }
+    
+    return sensor_reading(types, temperature, soil_moisture, light);
+
 }
 
 std::vector<device_info> register_devices(mqtt::const_message_ptr msg){
@@ -142,7 +218,7 @@ std::vector<device_info> register_devices(mqtt::const_message_ptr msg){
             }
             if (type == "soil_moisture")
             {
-                data |= returned_data_t::HUMIDITY;
+                data |= returned_data_t::SOIL_MOISTURE;
                 continue;
             }
             if (type == "light_intensity")
@@ -150,9 +226,7 @@ std::vector<device_info> register_devices(mqtt::const_message_ptr msg){
                 data |= returned_data_t::LIGHT;
                 continue;
             }
-            
         }
-
 
         device_info tmp( (ieee_addr_t)std::stoull( (*i)["ieee_address"].asString(), NULL, 16 ), "",  data, interaction_type_t::NONE);
         devices.push_back(tmp);
@@ -161,7 +235,6 @@ std::vector<device_info> register_devices(mqtt::const_message_ptr msg){
         std::cout << "==\n";
     }
     
-
     return devices;
 }
 

@@ -40,27 +40,109 @@ int tsdb_extraction_routine(redis_interface_config conf, std::condition_variable
 
     last_minute_from_key(context, "sensor_3");
 
-    redisFree(context);
+    std::vector<device_info> devs;
 
     while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(1));
-        if (dev_queue->empty())
-        {
-            continue;
-        }
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         while (!dev_queue->empty())
         {
             device_info dev = dev_queue->pop_front();
+            devs.push_back(dev);
             std::cout << "Got from other thread::\n";
             std::cout << dev.get_z2m_addr() << " :: N? = " << dev.getName() << " :: R = " << dev.get_returned_data() << "\n";
-
+        }
+        debug(        
+        if (devs.size() == 0){
+            std::cout << "No devices\n";
+        }
+        );
+        for (size_t i = 0; i < devs.size(); i++)
+        {
+            data_packet d = retrieve_last_period(context, ieee_to_hex(devs[i].get_ieee_address()), devs[i].get_returned_data(), devs[i].get_ieee_address());
+            debug_print(d.gist());
         }
         
+
     }
     cvar->notify_all();
     
+    redisFree(context);
     
     return EXIT_SUCCESS;
+}
+
+data_packet retrieve_last_period(redisContext * c, std::string key, returned_data_t type, ieee_addr_t addr){
+    redisReply * reply;
+
+    data_packet d;
+    d.types = type;
+    d.addr = addr;
+    d.temp_ts = 0;
+    d.temp = 0;
+    d.soil_m_ts = 0;
+    d.soil_m = 0;
+    d.light_ts = 0;
+    d.light = 0;
+    
+
+    if ((type & returned_data_t::SOIL_MOISTURE) != 0){
+
+        debug_print((key + redis_suffixes::soil_suffix + redis_suffixes::aggr_suffix).c_str() << '\n');
+
+        reply = (redisReply*)redisCommand(c, "TS.GET %s LATEST", (key + redis_suffixes::soil_suffix + redis_suffixes::aggr_suffix).c_str());
+        
+        if (reply->elements == 0){
+            d.types = (returned_data_t) (d.types & (~returned_data_t::SOIL_MOISTURE));
+        } else {
+
+
+            d.soil_m_ts = reply->element[0]->integer;
+            
+            debug_print(reply->element[0]->type << '\n');
+
+
+            d.soil_m = reply->element[1]->dval;
+
+            debug_print("Soil Moist - ts: " << d.soil_m_ts << " v: " << d.soil_m << '\n');
+
+        }
+        freeReplyObject(reply);
+    }
+
+    if ((type & returned_data_t::TEMPERATURE) != 0){
+        reply = (redisReply*)redisCommand(c, "TS.GET %s LATEST", (key + redis_suffixes::temp_suffix + redis_suffixes::aggr_suffix).c_str());
+        
+        if (reply->elements == 0){
+            d.types = (returned_data_t) (d.types & (~returned_data_t::TEMPERATURE));
+        }
+        else {
+            d.temp_ts = reply->element[reply->elements-1]->element[0]->integer;
+            d.temp = reply->element[reply->elements-1]->element[1]->dval;
+
+            debug_print("Temp - ts: " << d.temp_ts << " v: " << d.temp << '\n');
+
+        }
+        freeReplyObject(reply);
+    }
+
+    if ((type & returned_data_t::LIGHT) != 0){
+        reply = (redisReply*)redisCommand(c, "TS.GET %s LATEST", (key + redis_suffixes::light_suffix + redis_suffixes::aggr_suffix).c_str());
+        
+        if (reply->elements == 0){
+            d.types = (returned_data_t) (d.types & (~returned_data_t::LIGHT));
+        }
+        else {
+            d.light_ts = reply->element[reply->elements-1]->element[0]->integer;
+            d.light = reply->element[reply->elements-1]->element[1]->dval;
+            
+            debug_print("Light - ts: " << d.light_ts << " v: " << d.light << '\n');
+
+        }
+        freeReplyObject(reply);
+    }
+
+    return d;
+
 }
 
 bool redis_create_object(redisContext *c, std::string name) {
@@ -80,6 +162,14 @@ void push_to_key(redisContext * c, std::string key, std::string value){
     redisReply * reply;
 
     reply = (redisReply*)redisCommand(c, "TS.ADD %s * %s", key.c_str(), value.c_str());
+
+    freeReplyObject(reply);
+}
+
+void push_double_to_key(redisContext * c, std::string key, double value){
+    redisReply * reply;
+
+    reply = (redisReply*)redisCommand(c, "TS.ADD %s * %f", key.c_str(), value);
 
     freeReplyObject(reply);
 }
@@ -104,8 +194,59 @@ void get_all_from_key (redisContext *c, std::string key){
     
 }
 
-void create_aggregation_rule(redisContext* c, std::string key, std::string aggr_name){
+void create_sensor_series(redisContext * c, std::string key, returned_data_t data){
+    if ((data & returned_data_t::SOIL_MOISTURE) != 0)
+    {
+        redis_create_object(c, key + redis_suffixes::soil_suffix);
+    }
+    if ((data & returned_data_t::TEMPERATURE) != 0)
+    {
+        redis_create_object(c, key + redis_suffixes::temp_suffix);
+    }
+    if ((data & returned_data_t::LIGHT) != 0)
+    {
+        redis_create_object(c, key + redis_suffixes::light_suffix);
+    }   
+}
+
+void create_aggregation_for_device(redisContext * c, std::string key, returned_data_t data){
+    redisReply* reply;
+
+    if ((data & returned_data_t::SOIL_MOISTURE) != 0)
+    {
+        reply = (redisReply*)redisCommand(c, "TS.CREATE %s", (key + redis_suffixes::soil_suffix + redis_suffixes::aggr_suffix).c_str() );
+        debug_print(reply->str);
+        freeReplyObject(reply);
+        reply = (redisReply*)redisCommand(c, "TS.CREATERULE %s %s AGGREGATION avg 1000", (key + redis_suffixes::soil_suffix).c_str(), (key+redis_suffixes::soil_suffix + redis_suffixes::aggr_suffix).c_str() );
+        debug_print(reply->str);
+        freeReplyObject(reply); 
+    }
+    if ((data & returned_data_t::TEMPERATURE) != 0)
+    {
+        reply = (redisReply*)redisCommand(c, "TS.CREATE %s", (key + redis_suffixes::temp_suffix + redis_suffixes::aggr_suffix).c_str() );
+        debug_print(reply->str);
+        freeReplyObject(reply);
+        reply = (redisReply*)redisCommand(c, "TS.CREATERULE %s %s AGGREGATION avg 1000", (key + redis_suffixes::temp_suffix).c_str(), (key+redis_suffixes::temp_suffix + redis_suffixes::aggr_suffix).c_str() );
+        debug_print(reply->str);
+        freeReplyObject(reply); 
+    }
+    if ((data & returned_data_t::LIGHT) != 0)
+    {
+        reply = (redisReply*)redisCommand(c, "TS.CREATE %s", (key + redis_suffixes::light_suffix + redis_suffixes::aggr_suffix).c_str() );
+        debug_print(reply->str);
+        freeReplyObject(reply);
+        reply = (redisReply*)redisCommand(c, "TS.CREATERULE %s %s AGGREGATION avg 1000", (key + redis_suffixes::light_suffix).c_str(), (key+redis_suffixes::light_suffix + redis_suffixes::aggr_suffix).c_str() );
+        debug_print(reply->str);
+        freeReplyObject(reply); 
+    }   
+}
+
+double last_second_from_key(redisContext * c, std::string key){
     redisReply * reply;
+
+    reply = (redisReply*)redisCommand(c, "TS.RANGE %s - + + AGGREGATION abg 1000", key.c_str());
+
+    std::string val = reply->element[reply->elements-1]->element[1]->str;
 
 
 }

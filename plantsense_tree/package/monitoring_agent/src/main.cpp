@@ -37,7 +37,9 @@ int main(int argc, char const *argv[])
         .address = "localhost",
         .port = 1883,
         .timeout_s = 10,
-        .retries = 5
+        .retries = 5,
+        .redis_addr = "localhost",
+        .redis_port = 6379,
     };
 
     const redis_interface_config r_conf{
