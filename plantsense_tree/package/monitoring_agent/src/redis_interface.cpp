@@ -1,7 +1,7 @@
 #include "redis_interface.hpp"
 #include <iostream>
 
-[[noreturn]] void tsdb_extraction_routine() {
+int tsdb_extraction_routine(redis_interface_config conf, std::condition_variable * cvar, threaded_queue<device_info> * dev_queue) {
     
     redisReply *reply;
     redisContext *context;
@@ -11,14 +11,16 @@
     if (context->err)
     {
         std::cout << "R :: database connection error: " << context->errstr << "\n";
-        exit (-1);
+        cvar->notify_all();
+        return EXIT_FAILURE;
     }
     
     reply = (redisReply*)redisCommand(context, "PING %s", "Hello World!");
     if (reply == NULL)
     {
         std::cout << "R :: failed to ping redis server\n";
-        exit(-1);
+        cvar->notify_all();
+        return EXIT_FAILURE;
     }
     
     std::cout << "R :: resp: " << reply->str << '\n';
@@ -40,7 +42,25 @@
 
     redisFree(context);
 
-    exit(0);    
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+        if (dev_queue->empty())
+        {
+            continue;
+        }
+        while (!dev_queue->empty())
+        {
+            device_info dev = dev_queue->pop_front();
+            std::cout << "Got from other thread::\n";
+            std::cout << dev.get_z2m_addr() << " :: N? = " << dev.getName() << " :: R = " << dev.get_returned_data() << "\n";
+
+        }
+        
+    }
+    cvar->notify_all();
+    
+    
+    return EXIT_SUCCESS;
 }
 
 bool redis_create_object(redisContext *c, std::string name) {

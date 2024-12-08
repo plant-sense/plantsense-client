@@ -3,8 +3,16 @@
 
 #include <hiredis/hiredis.h>
 #include <string>
+#include "common.hpp"
 
-[[noreturn]] void tsdb_extraction_routine();
+struct redis_interface_config
+{
+    std::string addr;
+    int port;
+};
+
+
+int tsdb_extraction_routine(redis_interface_config conf, std::condition_variable * cvar, threaded_queue<device_info> * dev_queue);
 bool redis_create_object(redisContext *c, std::string name);
 void push_to_key(redisContext * c, std::string key, std::string value);
 void get_all_from_key (redisContext *c, std::string key);
