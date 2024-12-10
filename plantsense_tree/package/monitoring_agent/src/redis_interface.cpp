@@ -43,7 +43,6 @@ int tsdb_extraction_routine(redis_interface_config conf, std::condition_variable
     std::vector<device_info> devs;
 
     while (true) {
-        std::this_thread::sleep_for(std::chrono::seconds(5));
         while (!dev_queue->empty())
         {
             device_info dev = dev_queue->pop_front();
@@ -63,6 +62,7 @@ int tsdb_extraction_routine(redis_interface_config conf, std::condition_variable
         }
         
 
+        std::this_thread::sleep_for(std::chrono::seconds(5));
     }
     cvar->notify_all();
     
